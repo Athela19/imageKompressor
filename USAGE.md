@@ -1,121 +1,99 @@
-Imaging Service — Usage
+## Imaging Service — Usage
 
 Ringkasan
 
-Imaging Service adalah service HTTP sederhana untuk mengambil gambar dari URL, menerapkan beberapa transformasi (resize, flip, filter, kualitas/format), dan mengembalikan gambar yang sudah diproses.
+Imaging Service adalah layanan HTTP kecil yang mengambil sebuah gambar dari URL, menerapkan transformasi (resize, crop, flip, filter, watermark), lalu mengembalikan gambar hasilnya. Dokumentasi ini menjelaskan format path, opsi yang didukung, cara build/run, contoh penggunaan, serta catatan penting.
 
-Kontrak singkat
+## Endpoint
 
-- Endpoint: GET /
-- Path format: /OPTIONS/ENCODED_IMAGE_URL
-  - OPTIONS: string berisi instruksi transformasi (lihat bagian `Options` di bawah)
-  - ENCODED_IMAGE_URL: URL gambar yang sudah di-URL-encode atau path tanpa skema (http/https akan ditambahkan secara default)
-- Response: image (Content-Type sesuai format: image/jpeg, image/png, atau image/webp) atau HTTP error
+- Method: GET
+- Path: /{OPTIONS}/{ENCODED_IMAGE_URL}
+  - OPTIONS: string instruksi transformasi (lihat bagian "Opsi" di bawah)
+  - ENCODED_IMAGE_URL: URL sumber yang sudah di-URL-encode (mis. hasil dari `encodeURIComponent`), atau host/path tanpa skema (server akan menambahkan `https://` jika skema tidak ada)
 
-Environment
+Contoh ringkas: GET /300x200/https%3A%2F%2Fexample.com%2Fimg.jpg
 
-- PORT (opsional): port untuk menjalankan server (default: 8080)
-- File `go.mod` sudah mencantumkan dependensi yang diperlukan (imaging, webp)
+Response: body berisi gambar yang sudah diproses. Content-Type ditentukan berdasarkan opsi format (image/jpeg, image/png, image/webp).
 
-Build & Run
+## Environment
 
-Di Windows PowerShell pada root project:
+- PORT (opsional): port untuk menjalankan server. Default: 8080
+
+## Build & Run (Windows PowerShell)
+
+Jalankan dari root project:
 
 ```powershell
-# build
+# build semua paket
 go build ./...
 
-# run (PORT optional)
-$env:PORT = "8080"; .\imaging-service.exe
-# atau
-go run main.go
+# run (opsional set PORT)
+$env:PORT = "8080"; go run main.go
 ```
 
-Format OPTIONS
+Catatan: program menuliskan beberapa log debug ke stdout (parser/processor). Untuk produksi, sebaiknya ganti dengan logger berlevel.
 
-Beberapa contoh opsi yang didukung (diletakkan sebelum slash yang memisahkan URL):
+## Opsi (FORMAT dari {OPTIONS})
 
-- Size: WIDTHxHEIGHT
-  - Contoh: 200x150
-  - Jika width < 0, maka gambar akan dibalik horizontal (flip). Contoh: -200x150
-- Smart crop: tambahkan teks `smart` di opsi untuk menandakan smart crop (catatan: fitur smart crop belum diimplementasikan di processor)
-- Crop region: X:Y:W:H (empat angka, dipisah dengan `:`)
-  - Contoh: 10:20:300:200
-- Filters: tambahkan `filters:` diikuti daftar filter yang dipisah `:` dengan format name(value)
-  - Contoh: filters:grayscale(1):blur(2.5):brightness(10):contrast(5):format(webp):quality(80):watermark(MyWatermark)
-  - Filter yang dikenali oleh parser/processor saat ini: grayscale, blur, brightness, contrast
-  - `format(...)` dan `quality(...)` di-parse dari filter string untuk menentukan output format dan kualitas
+OPTIONS adalah string yang menggabungkan beberapa instruksi, dipisahkan dengan `:`. Struktur yang sering dipakai:
 
-Contoh URL
+- Resize: WIDTHxHEIGHT
+  - Contoh: `300x200` — hasil ukuran 300x200
+  - Jika WIDTH < 0, gambar akan di-flip horizontal dan width dianggap absolut. Contoh: `-300x200` = flip horizontal + resize
+- Crop region: X:Y:W:H
+  - Contoh: `10:20:310:220` — memotong rectangle yang dimulai di (10,20) sampai (310,220)
+  - Implementation: parser mengisi `CropRegion` dan processor akan melakukan `imaging.Crop` jika region valid
+- Smart crop: menyertakan kata `smart` di OPTIONS menandai permintaan smart-crop (parser mengenali `smart`, namun implementasi smart crop belum canggih — saat ini belum ada deteksi fokus)
+- Filters: gunakan prefix `filters:` diikuti list filter yang dipisah `:`. Setiap filter dapat memiliki parameter dalam tanda kurung `name(value)`.
+  - Contoh lengkap: `filters:blur(2.5):grayscale(1):format(webp):quality(80):watermark(https://example.com/wm.png)`
+  - Filter yang di-parse dan diterapkan saat ini: `grayscale`, `blur`, `brightness`, `contrast`.
+  - `format(...)` menentukan output (`jpeg`/`png`/`webp`). Default output adalah `jpeg`.
+  - `quality(...)` menentukan kualitas untuk encoder JPEG/WEBP (default parser: 75).
+  - `watermark(...)` dapat berisi URL (atau teks tergantung cara penggunaan); saat ini kode men-download image watermark jika `opts.Watermark` berisi URL.
 
-1) Resize menjadi 300x200 dan ambil gambar dari example.com
+Contoh OPTIONS gabungan: `300x200:filters:blur(2.5):format(webp):quality(80)`
 
-http://localhost:8080/300x200/https%3A%2F%2Fexample.com%2Fimage.jpg
+## Contoh lengkap
 
-2) Resize + blur + output WEBP kualitas 80
+1) Resize 300x200 dari example.com
 
-http://localhost:8080/300x200/filters:blur(2.5):format(webp):quality(80)/https%3A%2F%2Fexample.com%2Fimage.jpg
+GET http://localhost:8080/300x200/https%3A%2F%2Fexample.com%2Fimage.jpg
+
+2) Resize + blur + output webp kualitas 80
+
+GET http://localhost:8080/300x200:filters:blur(2.5):format(webp):quality(80)/https%3A%2F%2Fexample.com%2Fimage.jpg
 
 3) Flip horizontal (negatif width)
 
-http://localhost:8080/-300x200/https%3A%2F%2Fexample.com%2Fimage.jpg
+GET http://localhost:8080/-300x200/https%3A%2F%2Fexample.com%2Fimage.jpg
 
-Catatan implementasi & batasan saat ini (hal-hal yang belum bekerja / risiko)
+4) Menambahkan watermark (contoh URL watermark)
 
-1) Crop region parsing ada, tetapi cropping belum diterapkan di `processor.ProcessImage`.
-   - Lokasi: `internal/parser/optionParser.go` (mengisi CropRegion), `internal/processor/imageProcessor.go` (tidak ada pemrosesan crop).
-   - Dampak: opsi crop tidak berpengaruh.
-   - Saran perbaikan: implementasikan cropping dengan `imaging.Crop` menggunakan nilai `opts.CropRegion`.
+GET http://localhost:8080/300x200:filters:watermark(https%3A%2F%2Fexample.com%2Fwm.png)/https%3A%2F%2Fexample.com%2Fimage.jpg
 
-2) Smart crop (opsi `smart`) ter-deteksi di parser tetapi tidak diimplementasikan di processor.
-   - Lokasi: parser menandai `opts.SmartCrop`, tapi processor tidak memeriksa.
-   - Saran: gunakan strategi sederhana (center crop) atau integrasikan library deteksi fokus untuk smart crop.
+## Catatan implementasi & batasan (yang saya temukan)
 
-3) [✓] Watermark sudah diimplementasikan
-   - Cara penggunaan: tambahkan filter watermark di URL, contoh: filters:watermark(Copyright 2025)
-   - Menggunakan font Go Regular dengan ukuran relatif terhadap lebar gambar
-   - Watermark ditampilkan di pojok kanan bawah dengan warna putih semi-transparan
+1) Parser berpotensi panic saat parsing filter yang malformed
+   - Penyebab: parsing mencari grup `(...)` dan mengambil index tanpa pemeriksaan panjang hasil regex. Jika filter tidak mengandung `(...)` seperti diharapkan, akses index bisa menyebabkan out-of-range.
+   - Dampak: permintaan dengan filter malformat dapat menyebabkan panic di server.
+   - Rekomendasi: tambahkan pemeriksaan hasil regex (len == 2) sebelum mengakses dan fallback ke nilai default.
 
-4) Parser `filters:` berbahaya bila format `( ... )` tidak ditemukan — akses `valStr[1]` digunakan tanpa pengecekan panjang sehingga dapat menyebabkan panic saat parsing jika format unexpected.
-   - Lokasi: `internal/parser/optionParser.go` bagian parsing filters.
-   - Dampak: malformed filter string dapat menyebabkan panic atau nilai tak terduga.
-   - Saran: tambahkan pemeriksaan `len(valStr) == 2` sebelum mengakses `valStr[1]` dan fallback yang aman.
+2) FetchImage menggunakan `http.Get` tanpa timeout
+   - Dampak: request ke origin yang lambat dapat menggantung goroutine dan menurunkan throughput.
+   - Rekomendasi: gunakan `http.Client{Timeout: time.Second * 10}` dan batasi ukuran body (mis. baca sampai N bytes) serta handling kode status != 200.
 
-5) Banyak operasi jaringan / IO tidak memiliki timeout atau retry.
-   - `pkg/utils/fetcher.go` menggunakan `http.Get` tanpa timeout.
-   - Dampak: request yang tergantung bisa menggantung goroutine server.
-   - Saran: gunakan `http.Client{Timeout: ...}` dan batasan ukuran body.
+3) Crop sudah diimplementasikan di `processor.ProcessImage` (periksa `CropRegion`) — kode akan melakukan crop jika region valid.
 
-6) Tidak ada caching.
-   - Setiap permintaan mengambil gambar dari origin; ini bisa menyebabkan latensi tinggi dan beban traffic.
-   - Saran: tambahkan cache (in-memory LRU atau cache disk) untuk URL yang sering diminta.
+4) Smart crop di-deteksi oleh parser (`opts.SmartCrop`), namun tidak ada strategi smart-crop yang nyata di processor — saat ini tidak berpengaruh selain flag.
 
-7) Tidak ada logging request/metrics.
-   - Saran: tambah logging (request path, duration, status) dan metrics (Prometheus) bila diperlukan.
+5) Watermark: kode saat ini mengunduh watermark dari URL bila `opts.Watermark` berisi URL. Watermark di-resize ke 1/5 lebar gambar lalu di-overlay di sudut kanan-bawah dengan alpha 0.5.
 
-8) Tidak ada validasi atau sanitasi lengkap pada URL input.
-   - Parser menambahkan `https://` jika skema tidak ada — ini bisa menyembunyikan input path yang salah.
-   - Saran: lebih ketat memvalidasi host/URL atau optional allowlist.
+6) Tidak ada caching, logging per-request, atau metrics. Untuk penggunaan produksi, pertimbangkan menambahkan cache (LRU), logger terstruktur, dan metrics (Prometheus).
 
-9) Tidak ada test unit / CI.
-   - Saran: tambahkan beberapa unit test untuk parser dan processor.
+7) Tidak ada unit tests di repo saat ini. Direkomendasikan menambahkan test untuk `parser.ParseOptions` dan `processor.ProcessImage`.
 
-10) Pemrosesan format `webp` bergantung pada library `github.com/chai2010/webp` yang sudah ada di `go.mod`. Pastikan environment build mendukung library tersebut (tidak perlu CGO secara default untuk library ini).
+## Troubleshooting singkat
 
-Langkah perbaikan prioritas (rekomendasi)
-
-1. Perbaiki parsing filters untuk mencegah index out of range.
-2. Implementasikan crop dan watermark di `processor.ProcessImage`.
-3. Tambahkan timeout pada FetchImage (gunakan http.Client dengan Timeout).
-4. Tambahkan unit tests untuk `parser.ParseOptions` dan `processor.ProcessImage`.
-5. Tambahkan caching sederhana jika diperlukan untuk performa.
-
-Penutup
-
-Saya sudah men-parse kode sumber dan membuat ringkasan ini. Jika mau, saya bisa:
-- Mengimplementasikan perbaikan prioritas (contoh: aman-guard parsing + cropping) dan menambahkan unit test singkat.
-- Menambahkan example Dockerfile atau compose untuk deployment.
-
----
-
-(Di-generate otomatis berdasarkan isi file project saat ini)
+- Jika server tidak mau jalan: pastikan module dependencies terunduh (`go mod tidy`) dan tidak ada error build.
+- Jika image tidak muncul: periksa URL sumber dan pastikan dapat diakses dari mesin yang menjalankan service. Periksa log debug untuk pesan dari parser/processor.
+- Pastikan gcc sudah terpasang di server anda, ketik gcc --version
