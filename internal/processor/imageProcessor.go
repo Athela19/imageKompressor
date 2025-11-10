@@ -10,17 +10,14 @@ import (
 func ProcessImage(img image.Image, opts parser.Options) (image.Image, error) {
 	result := img
 
-	// Resize
 	if opts.Width > 0 || opts.Height > 0 {
 		result = imaging.Resize(result, opts.Width, opts.Height, imaging.Lanczos)
 	}
 
-	// Flip horizontal
 	if opts.Flip {
 		result = imaging.FlipH(result)
 	}
 
-	// Filters
 	for name, val := range opts.Filters {
 		switch name {
 		case "grayscale":
