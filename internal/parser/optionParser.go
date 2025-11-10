@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -21,6 +22,20 @@ type Options struct {
 }
 
 func ParseOptions(path string) (Options, string, error) {
+	if path == "" {
+		return Options{}, "", errors.New("empty path")
+	}
+
+	// Ambil watermark dulu, agar tidak mengganggu imageURL
+	wmRe := regexp.MustCompile(`watermark\("([^"]+)"\)`)
+	wmMatch := wmRe.FindStringSubmatch(path)
+	var wmURL string
+	if len(wmMatch) == 2 {
+		wmURL = wmMatch[1]
+		// hapus filter watermark dari path
+		path = strings.Replace(path, wmMatch[0], "", 1)
+	}
+
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) < 2 {
 		return Options{}, "", errors.New("invalid URL format, must be /OPTIONS/ENCODED_URL")
@@ -33,6 +48,7 @@ func ParseOptions(path string) (Options, string, error) {
 		imageURL = decoded
 	}
 
+	imageURL = strings.TrimSpace(imageURL)
 	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
 		imageURL = "https://" + imageURL
 	}
@@ -42,6 +58,7 @@ func ParseOptions(path string) (Options, string, error) {
 		Filters: make(map[string]float64),
 	}
 
+	// parsing ukuran
 	sizeRe := regexp.MustCompile(`(-?\d+)x(-?\d+)`)
 	if matches := sizeRe.FindStringSubmatch(optStr); len(matches) == 3 {
 		opts.Width, _ = strconv.Atoi(matches[1])
@@ -70,24 +87,41 @@ func ParseOptions(path string) (Options, string, error) {
 			if f == "" {
 				continue
 			}
+
 			name := strings.Split(f, "(")[0]
-			valStr := regexp.MustCompile(`\((.*?)\)`).FindStringSubmatch(f)
 			value := 1.0
-			if len(valStr) == 2 {
-				value, _ = strconv.ParseFloat(valStr[1], 64)
+			param := ""
+
+			if name != "watermark" {
+				valStr := regexp.MustCompile(`\((.*?)\)`).FindStringSubmatch(f)
+				if len(valStr) == 2 {
+					param = strings.TrimSpace(valStr[1])
+					if v, err := strconv.ParseFloat(param, 64); err == nil {
+						value = v
+					}
+				}
 			}
+
 			opts.Filters[name] = value
 
 			switch name {
 			case "format":
-				opts.Format = strings.ToLower(valStr[1])
-			case "watermark":
-				opts.Watermark = valStr[1]
+				if param != "" {
+					opts.Format = strings.ToLower(param)
+				}
 			case "quality":
 				opts.Quality = int(value)
 			}
 		}
 	}
+
+	if wmURL != "" {
+		opts.Watermark = wmURL
+	}
+
+	fmt.Println("DEBUG PARSER:")
+	fmt.Println("ImageURL:", imageURL)
+	fmt.Println("Options:", opts)
 
 	return opts, imageURL, nil
 }
