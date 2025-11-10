@@ -26,7 +26,7 @@ func ParseOptions(path string) (Options, string, error) {
 		return Options{}, "", errors.New("empty path")
 	}
 
-	wmRe := regexp.MustCompile(`watermark\("([^"]+)"\)`)
+	wmRe := regexp.MustCompile(`watermark\(([^)]+)\)`)
 	wmMatch := wmRe.FindStringSubmatch(path)
 	var wmURL string
 	if len(wmMatch) == 2 {
@@ -56,29 +56,46 @@ func ParseOptions(path string) (Options, string, error) {
 		Filters: make(map[string]float64),
 	}
 
-	sizeRe := regexp.MustCompile(`(-?\d+)x(-?\d+)`)
-	if matches := sizeRe.FindStringSubmatch(optStr); len(matches) == 3 {
-		opts.Width, _ = strconv.Atoi(matches[1])
-		opts.Height, _ = strconv.Atoi(matches[2])
-		if opts.Width < 0 {
-			opts.Flip = true
-			opts.Width = -opts.Width
+	optParts := strings.Split(optStr, ":")
+
+	// Resize parsing
+	if len(optParts) > 0 {
+		size := strings.Split(optParts[0], "x")
+		if len(size) == 2 {
+			opts.Width, _ = strconv.Atoi(size[0])
+			opts.Height, _ = strconv.Atoi(size[1])
+			if opts.Width < 0 {
+				opts.Flip = true
+				opts.Width = -opts.Width
+			}
 		}
 	}
 
+	// Crop parsing
+	if len(optParts) > 1 {
+		xy1 := strings.Split(optParts[0], "x")
+		xy2 := strings.Split(optParts[1], "x")
+		if len(xy1) == 2 && len(xy2) == 2 {
+			opts.CropRegion[0], _ = strconv.Atoi(xy1[0])
+			opts.CropRegion[1], _ = strconv.Atoi(xy1[1])
+			opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
+			opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
+		} else if len(xy2) == 2 {
+			// jika hanya ada satu koordinat crop (WxH), anggap x1,y1=0,0
+			opts.CropRegion[0], opts.CropRegion[1] = 0, 0
+			opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
+			opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
+		}
+	}
+
+	// Smart crop
 	if strings.Contains(optStr, "smart") {
 		opts.SmartCrop = true
 	}
 
-	cropRe := regexp.MustCompile(`(\d+):(\d+):(\d+):(\d+)`)
-	if matches := cropRe.FindStringSubmatch(optStr); len(matches) == 5 {
-		for i := 1; i <= 4; i++ {
-			opts.CropRegion[i-1], _ = strconv.Atoi(matches[i])
-		}
-	}
-
+	// Filter parsing
 	if strings.Contains(optStr, "filters:") {
-		filterStr := strings.Split(optStr, "filters:")[1]
+		filterStr := strings.SplitN(optStr, "filters:", 2)[1]
 		filterParts := strings.Split(filterStr, ":")
 		for _, f := range filterParts {
 			if f == "" {
@@ -86,45 +103,31 @@ func ParseOptions(path string) (Options, string, error) {
 			}
 
 			name := strings.Split(f, "(")[0]
-			value := 1.0
 			param := ""
+			value := 1.0
 
-			if name != "watermark" {
-				valStr := regexp.MustCompile(`\((.*?)\)`).FindStringSubmatch(f)
-				if len(valStr) == 2 {
-					param = strings.TrimSpace(valStr[1])
-					if v, err := strconv.ParseFloat(param, 64); err == nil {
-						value = v
-					}
+			valStr := regexp.MustCompile(`\((.*?)\)`).FindStringSubmatch(f)
+			if len(valStr) == 2 {
+				param = valStr[1]
+				if v, err := strconv.ParseFloat(param, 64); err == nil {
+					value = v
 				}
 			}
-
-			if name != "crop" {
-			opts.Filters[name] = value
-		}
-
-		if name == "crop" {
-			coords := strings.Split(param, ",")
-			if len(coords) == 4 {
-				for i := 0; i < 4; i++ {
-					if v, err := strconv.Atoi(strings.TrimSpace(coords[i])); err == nil {
-						opts.CropRegion[i] = v
-					}
-				}
-			}
-		}
 
 			switch name {
 			case "format":
-				if param != "" {
-					opts.Format = strings.ToLower(param)
-				}
+				opts.Format = strings.ToLower(param)
 			case "quality":
 				opts.Quality = int(value)
+			case "watermark":
+				opts.Watermark = param
+			default:
+				opts.Filters[name] = value
 			}
 		}
 	}
 
+	// Wa
 	if wmURL != "" {
 		opts.Watermark = wmURL
 	}
