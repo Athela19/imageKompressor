@@ -102,7 +102,21 @@ func ParseOptions(path string) (Options, string, error) {
 				}
 			}
 
+			if name != "crop" {
 			opts.Filters[name] = value
+		}
+
+		// parsing crop
+		if name == "crop" {
+			coords := strings.Split(param, ",")
+			if len(coords) == 4 {
+				for i := 0; i < 4; i++ {
+					if v, err := strconv.Atoi(strings.TrimSpace(coords[i])); err == nil {
+						opts.CropRegion[i] = v
+					}
+				}
+			}
+		}
 
 			switch name {
 			case "format":
