@@ -58,35 +58,70 @@ func ParseOptions(path string) (Options, string, error) {
 		Filters: make(map[string]float64),
 	}
 
-optParts := strings.Split(optStr, ":")
+	// Pisahkan filter dari optStr jika ada
+	filterIndex := strings.Index(optStr, "filters:")
+	filterStr := ""
+	if filterIndex != -1 {
+		filterStr = optStr[filterIndex+len("filters:"):]
+		optStr = strings.TrimSuffix(optStr[:filterIndex], ":")
+	}
 
-if len(optParts) == 1 {
-    // resize
-    size := strings.Split(optParts[0], "x")
-    if len(size) == 2 {
-        opts.Width, _ = strconv.Atoi(size[0])
-        opts.Height, _ = strconv.Atoi(size[1])
-        if opts.Width < 0 {
-            opts.Flip = true
-            opts.Width = -opts.Width
-        }
-    }
-} else if len(optParts) == 2 {
-    // crop
-    xy1 := strings.Split(optParts[0], "x")
-    xy2 := strings.Split(optParts[1], "x")
-    if len(xy1) == 2 && len(xy2) == 2 {
-        opts.CropRegion[0], _ = strconv.Atoi(xy1[0])
-        opts.CropRegion[1], _ = strconv.Atoi(xy1[1])
-        opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
-        opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
-    } else if len(xy2) == 2 {
-        opts.CropRegion[0], opts.CropRegion[1] = 0, 0
-        opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
-        opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
-    }
-}
+	optParts := strings.Split(optStr, ":")
 
+	// Resize / Crop parsing
+	if len(optParts) == 1 {
+		// Resize
+		size := strings.Split(optParts[0], "x")
+		if len(size) == 2 {
+			opts.Width, _ = strconv.Atoi(size[0])
+			opts.Height, _ = strconv.Atoi(size[1])
+			if opts.Width < 0 {
+				opts.Flip = true
+				opts.Width = -opts.Width
+			}
+		}
+	} else if len(optParts) == 2 {
+		// Crop: pastikan kedua bagian valid angka
+		isCrop := true
+		for _, part := range optParts {
+			if !strings.Contains(part, "x") {
+				isCrop = false
+				break
+			}
+			nums := strings.Split(part, "x")
+			if len(nums) != 2 {
+				isCrop = false
+				break
+			}
+			if _, err1 := strconv.Atoi(nums[0]); err1 != nil {
+				isCrop = false
+				break
+			}
+			if _, err2 := strconv.Atoi(nums[1]); err2 != nil {
+				isCrop = false
+				break
+			}
+		}
+		if isCrop {
+			xy1 := strings.Split(optParts[0], "x")
+			xy2 := strings.Split(optParts[1], "x")
+			opts.CropRegion[0], _ = strconv.Atoi(xy1[0])
+			opts.CropRegion[1], _ = strconv.Atoi(xy1[1])
+			opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
+			opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
+		} else {
+			// Jika bukan crop, treat sebagai resize dengan height = 0
+			size := strings.Split(optParts[0], "x")
+			if len(size) == 2 {
+				opts.Width, _ = strconv.Atoi(size[0])
+				opts.Height, _ = strconv.Atoi(size[1])
+				if opts.Width < 0 {
+					opts.Flip = true
+					opts.Width = -opts.Width
+				}
+			}
+		}
+	}
 
 	// Smart crop
 	if strings.Contains(optStr, "smart") {
@@ -122,8 +157,7 @@ if len(optParts) == 1 {
 	}
 
 	// Filter parsing
-	if strings.Contains(optStr, "filters:") {
-		filterStr := strings.SplitN(optStr, "filters:", 2)[1]
+	if filterStr != "" {
 		filterParts := strings.Split(filterStr, ":")
 		for _, f := range filterParts {
 			if f == "" {
@@ -155,7 +189,7 @@ if len(optParts) == 1 {
 		}
 	}
 
-	// Wa
+	// Watermark override
 	if wmURL != "" {
 		opts.Watermark = wmURL
 	}
