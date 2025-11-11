@@ -58,7 +58,6 @@ func ParseOptions(path string) (Options, string, error) {
 		Filters: make(map[string]float64),
 	}
 
-	// Pisahkan filter dari optStr jika ada
 	filterIndex := strings.Index(optStr, "filters:")
 	filterStr := ""
 	if filterIndex != -1 {
@@ -68,9 +67,7 @@ func ParseOptions(path string) (Options, string, error) {
 
 	optParts := strings.Split(optStr, ":")
 
-	// Resize / Crop parsing
 	if len(optParts) == 1 {
-		// Resize
 		size := strings.Split(optParts[0], "x")
 		if len(size) == 2 {
 			opts.Width, _ = strconv.Atoi(size[0])
@@ -81,7 +78,6 @@ func ParseOptions(path string) (Options, string, error) {
 			}
 		}
 	} else if len(optParts) == 2 {
-		// Crop: pastikan kedua bagian valid angka
 		isCrop := true
 		for _, part := range optParts {
 			if !strings.Contains(part, "x") {
@@ -110,7 +106,6 @@ func ParseOptions(path string) (Options, string, error) {
 			opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
 			opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
 		} else {
-			// Jika bukan crop, treat sebagai resize dengan height = 0
 			size := strings.Split(optParts[0], "x")
 			if len(size) == 2 {
 				opts.Width, _ = strconv.Atoi(size[0])
@@ -123,7 +118,6 @@ func ParseOptions(path string) (Options, string, error) {
 		}
 	}
 
-	// Smart crop
 	if strings.Contains(optStr, "smart") {
 		opts.SmartCrop = true
 	}
@@ -138,25 +132,34 @@ func ParseOptions(path string) (Options, string, error) {
 		} else {
 			fmt.Println("DEBUG: Image fetched successfully")
 
-			cropW, cropH := opts.Width, opts.Height
-			if cropW == 0 || cropH == 0 {
-				cropW, cropH = 200, 200
-			}
-			fmt.Println("DEBUG: Crop size:", cropW, "x", cropH)
-
 			mapBright := utils.GetBrightnessMap(img)
-			rect := utils.FindMostContrastedRegion(mapBright, cropW, cropH)
 
-			fmt.Println("DEBUG: Smart crop rectangle (most contrasted):", rect.Min.X, rect.Min.Y, rect.Max.X, rect.Max.Y)
+			if opts.Width == 0 && opts.Height == 0 {
+				fmt.Println("DEBUG: Smart crop by object detection")
+				rect := utils.FindDominantObjectRegion(mapBright)
 
-			opts.CropRegion[0] = rect.Min.X
-			opts.CropRegion[1] = rect.Min.Y
-			opts.CropRegion[2] = rect.Max.X
-			opts.CropRegion[3] = rect.Max.Y
+				opts.CropRegion[0] = rect.Min.X
+				opts.CropRegion[1] = rect.Min.Y
+				opts.CropRegion[2] = rect.Max.X
+				opts.CropRegion[3] = rect.Max.Y
+
+				fmt.Printf("DEBUG: Dominant object region: (%d,%d) - (%d,%d)\n",
+					rect.Min.X, rect.Min.Y, rect.Max.X, rect.Max.Y)
+			} else {
+				cropW, cropH := opts.Width, opts.Height
+				mapRect := utils.FindMostContrastedRegion(mapBright, cropW, cropH)
+
+				opts.CropRegion[0] = mapRect.Min.X
+				opts.CropRegion[1] = mapRect.Min.Y
+				opts.CropRegion[2] = mapRect.Max.X
+				opts.CropRegion[3] = mapRect.Max.Y
+
+				fmt.Printf("DEBUG: Smart crop region by contrast: (%d,%d) - (%d,%d)\n",
+					mapRect.Min.X, mapRect.Min.Y, mapRect.Max.X, mapRect.Max.Y)
+			}
 		}
 	}
 
-	// Filter parsing
 	if filterStr != "" {
 		filterParts := strings.Split(filterStr, ":")
 		for _, f := range filterParts {
@@ -189,7 +192,6 @@ func ParseOptions(path string) (Options, string, error) {
 		}
 	}
 
-	// Watermark override
 	if wmURL != "" {
 		opts.Watermark = wmURL
 	}
