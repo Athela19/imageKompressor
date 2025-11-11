@@ -58,37 +58,35 @@ func ParseOptions(path string) (Options, string, error) {
 		Filters: make(map[string]float64),
 	}
 
-	optParts := strings.Split(optStr, ":")
+optParts := strings.Split(optStr, ":")
 
-	// Resize parsing
-	if len(optParts) > 0 {
-		size := strings.Split(optParts[0], "x")
-		if len(size) == 2 {
-			opts.Width, _ = strconv.Atoi(size[0])
-			opts.Height, _ = strconv.Atoi(size[1])
-			if opts.Width < 0 {
-				opts.Flip = true
-				opts.Width = -opts.Width
-			}
-		}
-	}
+if len(optParts) == 1 {
+    // resize
+    size := strings.Split(optParts[0], "x")
+    if len(size) == 2 {
+        opts.Width, _ = strconv.Atoi(size[0])
+        opts.Height, _ = strconv.Atoi(size[1])
+        if opts.Width < 0 {
+            opts.Flip = true
+            opts.Width = -opts.Width
+        }
+    }
+} else if len(optParts) == 2 {
+    // crop
+    xy1 := strings.Split(optParts[0], "x")
+    xy2 := strings.Split(optParts[1], "x")
+    if len(xy1) == 2 && len(xy2) == 2 {
+        opts.CropRegion[0], _ = strconv.Atoi(xy1[0])
+        opts.CropRegion[1], _ = strconv.Atoi(xy1[1])
+        opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
+        opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
+    } else if len(xy2) == 2 {
+        opts.CropRegion[0], opts.CropRegion[1] = 0, 0
+        opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
+        opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
+    }
+}
 
-	// Crop parsing
-	if len(optParts) > 1 {
-		xy1 := strings.Split(optParts[0], "x")
-		xy2 := strings.Split(optParts[1], "x")
-		if len(xy1) == 2 && len(xy2) == 2 {
-			opts.CropRegion[0], _ = strconv.Atoi(xy1[0])
-			opts.CropRegion[1], _ = strconv.Atoi(xy1[1])
-			opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
-			opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
-		} else if len(xy2) == 2 {
-			// jika hanya ada satu koordinat crop (WxH), anggap x1,y1=0,0
-			opts.CropRegion[0], opts.CropRegion[1] = 0, 0
-			opts.CropRegion[2], _ = strconv.Atoi(xy2[0])
-			opts.CropRegion[3], _ = strconv.Atoi(xy2[1])
-		}
-	}
 
 	// Smart crop
 	if strings.Contains(optStr, "smart") {
