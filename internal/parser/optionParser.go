@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"imaging-service/pkg/utils"
 )
 
 type Options struct {
@@ -91,6 +93,34 @@ func ParseOptions(path string) (Options, string, error) {
 	// Smart crop
 	if strings.Contains(optStr, "smart") {
 		opts.SmartCrop = true
+	}
+
+	if opts.SmartCrop {
+		fmt.Println("DEBUG: Smart crop is enabled")
+		fmt.Println("DEBUG: Fetching image from URL:", imageURL)
+
+		img, err := utils.FetchImage(imageURL)
+		if err != nil {
+			fmt.Println("DEBUG: Failed to fetch image for smart crop:", err)
+		} else {
+			fmt.Println("DEBUG: Image fetched successfully")
+
+			cropW, cropH := opts.Width, opts.Height
+			if cropW == 0 || cropH == 0 {
+				cropW, cropH = 200, 200
+			}
+			fmt.Println("DEBUG: Crop size:", cropW, "x", cropH)
+
+			mapBright := utils.GetBrightnessMap(img)
+			rect := utils.FindMostContrastedRegion(mapBright, cropW, cropH)
+
+			fmt.Println("DEBUG: Smart crop rectangle (most contrasted):", rect.Min.X, rect.Min.Y, rect.Max.X, rect.Max.Y)
+
+			opts.CropRegion[0] = rect.Min.X
+			opts.CropRegion[1] = rect.Min.Y
+			opts.CropRegion[2] = rect.Max.X
+			opts.CropRegion[3] = rect.Max.Y
+		}
 	}
 
 	// Filter parsing
